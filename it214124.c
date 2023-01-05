@@ -10,6 +10,8 @@
 #define NUM_THREADS 4
 #define NUM_CHARS 2000
 
+//WE STARTED HERE
+
 int count_all_letters = 0;
 
 int count_thread[NUM_THREADS];
