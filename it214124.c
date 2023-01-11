@@ -3,9 +3,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
+#include <fcntl.h>       // for O_RDONLY, O_WRONLY etc. OFLAGS' definitions
+#include <sys/stat.h>    // for modes, permissions etc.
 #include <sys/wait.h>
 #include <semaphore.h>
+
+// Link with -pthread
 
 #define NUM_THREADS 4
 #define NUM_CHARS 2000
@@ -16,19 +19,11 @@ int count_all_letters = 0;
 
 int count_thread[NUM_THREADS];
 
-// A mutex to synchronize access to the shared file
-pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;
-
 // A mutex to synchronize access to the shared count table
 pthread_mutex_t count_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// A mutex to synchronize acces to the 
-
 // Calculating the chunk size as the division of the number of chars, by the number of threads
 int chunk_size = NUM_CHARS / NUM_THREADS;
-
-// A flag to synchronize the two processes
-int flag = 0;
 
 // A table with size=26 to store the count of each character (A-Z)
 int count[26] = {0};
@@ -40,11 +35,17 @@ void sigint_handler(int sig);
 
 int main(int argc, char* argv[]) {
 
+    const char *semName = "it214124";
+    sem_t *sem_filelock;
+    sem_filelock = sem_open(semName, O_CREAT, 0600, 0);
+
     pid_t child_pid = fork();
 
     if (child_pid == 0) {
     // This is the child process (the reader process)
 
+	sem_wait(sem_filelock);
+	    
 	printf("Child: Started.\n");
 
 	// Create an array of thread IDs
@@ -68,13 +69,20 @@ int main(int argc, char* argv[]) {
 	for (int i = 0; i < 26; i++) {
 	    printf("%c: %d\n", 'a' + i, count[i]);
 	}
+
+
+        for (int i = 0; i < 26; i++) {
+            count_all_letters += count[i];   
+        }
+
+        printf("Generic: Letters in the file: %d.\n", count_all_letters);
     
     } else {
     // This is the parent process (the writer process)
-        
+
 	printf("Parent: Started.\n");
 	// Open the file for writing
-	int fd = open("data.txt", O_WRONLY | O_TRUNC);
+	int fd = open("data.txt", O_WRONLY | O_CREAT, 00777);
 
 	printf("Parent: Opened file.\n");
 
@@ -103,30 +111,27 @@ int main(int argc, char* argv[]) {
 	// Close the file
 	close(fd);
 
+	sem_post(sem_filelock);
+
 	printf("Parent: Waits for the child.\n");
 
 	// Wait for the child process to finish using waitpid()
 	waitpid(child_pid, NULL, 0);
+
+	sem_close(sem_filelock);
+	sem_unlink(semName);
+
     }  
   
-    for (int i = 0; i < 26; i++) {
-        count_all_letters += count[i];   
-    }
-
-    printf("Generic: Letters in the file: %d.\n", count_all_letters);
     
-    printf("Generic: Ending main.\n");
     return 0;  
 }
 
 void* thread_function(void* arg) {
 
-    // Lock the mutex to ensure exclusive access to the file
-    pthread_mutex_lock(&file_mutex);
-
     printf("Child: Inside the file_mutex.\n");
     // Open the file for reading
-    int fd = open("data.txt", O_RDONLY);
+    int fd = open("data.txt", O_RDONLY, 00777);
 
     // Seek to the correct position in the file
     lseek(fd, (long)arg * chunk_size, SEEK_CUR);
@@ -139,9 +144,6 @@ void* thread_function(void* arg) {
     // Close the file
     close(fd);
 
-    // Unlock the mutex to allow other threads to access the file
-    pthread_mutex_unlock(&file_mutex);
-
     printf("Child: Outside the file_mutex.\n");
 
     int partialcount[26] = {0};
@@ -149,16 +151,7 @@ void* thread_function(void* arg) {
     for (int i = 0; i < num_read; i++) {
        int index = buf[i] - 'a';
        if (index >= 0 && index < 26) {
-           // Lock the mutex to ensure exclusive access to the count table
-//	   pthread_mutex_lock(&count_mutex);
-
-	   // Update the count for this character
-//	   count[index]++;
-
-	   // Unlock the mutex to allow other threads to access the count table
-//	   pthread_mutex_unlock(&count_mutex);
            partialcount[index] ++;
-	   
        }
     }
     pthread_mutex_lock(&count_mutex);
