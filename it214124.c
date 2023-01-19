@@ -3,21 +3,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>       // for O_RDONLY, O_WRONLY etc. OFLAGS' definitions
-#include <sys/stat.h>    // for modes, permissions etc.
+#include <fcntl.h>       	// for O_RDONLY, O_WRONLY etc. OFLAGS' definitions.
+#include <sys/stat.h>    	// for modes, permissions etc.
 #include <sys/wait.h>
 #include <semaphore.h>
 
-// Link with -pthread
+		// Link with -pthread.
 
-#define NUM_THREADS 4
-#define NUM_CHARS 2000
+#define NUM_THREADS 4		// Number of threads.
+#define NUM_CHARS 2000		// Number of characters for the file.
 
-//WE STARTED HERE
+int count_all_letters = 0;	// To store all the letter counted by child.
 
-int count_all_letters = 0;
-
-int count_thread[NUM_THREADS];
+int count_thread[NUM_THREADS];	// A table that stores each thread.
 
 // A mutex to synchronize access to the shared count table
 pthread_mutex_t count_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -28,25 +26,35 @@ int chunk_size = NUM_CHARS / NUM_THREADS;
 // A table with size=26 to store the count of each character (A-Z)
 int count[26] = {0};
 
-void* thread_function(void* arg);
+void* thread_function(void* arg);	// thread fuction signature
 
-void sigint_handler(int sig);
+void sigint_handler(int sig);		// signal handler signature
 
 
 int main(int argc, char* argv[]) {
 
-    const char *semName = "it214124";
-    sem_t *sem_filelock;
-    sem_filelock = sem_open(semName, O_CREAT, 0600, 0);
+    const char *semName = "it214124";	// Initialize semaphore's name
+    sem_t *sem_filelock;		// declaring the semaphore
+    sem_filelock = sem_open(semName, O_CREAT, 0600, 0);		// We give 0 so that parent starts 
+								// always first, the writing part.
 
-    pid_t child_pid = fork();
+    pid_t child_pid = fork();		// process fork
+
+    if (child_pid == -1) {
+        exit(1);
+    }
 
     if (child_pid == 0) {
     // This is the child process (the reader process)
 
+        signal(SIGINT, sigint_handler);		// for signal handler
+        signal(SIGTERM, sigint_handler);	// for signal handler (both okay)
+	
 	sem_wait(sem_filelock);
 	    
 	printf("Child: Started.\n");
+	
+	sleep(2);
 
 	// Create an array of thread IDs
 	pthread_t threads[NUM_THREADS];
@@ -58,7 +66,6 @@ int main(int argc, char* argv[]) {
 	    pthread_create(&threads[i], NULL, thread_function, &count_thread[i]);
 	}
 
-	printf("Child: Join 4 threads.\n");
 	// Wait for the threads to finish
 	for (int i = 0; i < NUM_THREADS; i++) {
 	    pthread_join(threads[i], NULL);
@@ -68,21 +75,26 @@ int main(int argc, char* argv[]) {
 	// Print the count of each character
 	for (int i = 0; i < 26; i++) {
 	    printf("%c: %d\n", 'a' + i, count[i]);
+	    usleep(200000);
 	}
 
+	sleep(2);
 
         for (int i = 0; i < 26; i++) {
             count_all_letters += count[i];   
         }
 
-        printf("Generic: Letters in the file: %d.\n", count_all_letters);
+        printf("Child: Total number of letters in file: %d.\n", count_all_letters);
     
     } else {
     // This is the parent process (the writer process)
 
+        signal(SIGINT, SIG_IGN);	// for signal handler
+        signal(SIGTERM, SIG_IGN);	// for signal handler (both okay)
+	
 	printf("Parent: Started.\n");
 	// Open the file for writing
-	int fd = open("data.txt", O_WRONLY | O_CREAT, 00777);
+	int fd = open("data.txt", O_CREAT | O_WRONLY, 00777);
 
 	printf("Parent: Opened file.\n");
 
@@ -94,7 +106,6 @@ int main(int argc, char* argv[]) {
 	int counterletter = 0;
 	for (int i = 0; i < NUM_CHARS; i++) {
 	    buf[i] = 'a' + ((int)buf[i] % 26);
-//	    printf("buf[%d]=%c, ", i, buf[i]);
 	    if (buf[i] > 96 && buf[i] < 123) {
 	        counterletter++;
 	    } else {
@@ -108,6 +119,8 @@ int main(int argc, char* argv[]) {
 
 	printf("Parent: Letters writen in file, and counted: %d.\n", counterletter);
 	
+	sleep(2);
+
 	// Close the file
 	close(fd);
 
@@ -118,18 +131,16 @@ int main(int argc, char* argv[]) {
 	// Wait for the child process to finish using waitpid()
 	waitpid(child_pid, NULL, 0);
 
+	printf("Parent: The child got a signal, and I terminated normally\n");
 	sem_close(sem_filelock);
 	sem_unlink(semName);
-
     }  
-  
     
     return 0;  
 }
 
-void* thread_function(void* arg) {
+void* thread_function(void* arg) {		
 
-    printf("Child: Inside the file_mutex.\n");
     // Open the file for reading
     int fd = open("data.txt", O_RDONLY, 00777);
 
@@ -144,8 +155,6 @@ void* thread_function(void* arg) {
     // Close the file
     close(fd);
 
-    printf("Child: Outside the file_mutex.\n");
-
     int partialcount[26] = {0};
     //Process the chunk of data and update the count table
     for (int i = 0; i < num_read; i++) {
@@ -154,6 +163,7 @@ void* thread_function(void* arg) {
            partialcount[index] ++;
        }
     }
+
     pthread_mutex_lock(&count_mutex);
     for (int i = 0; i < 26; i++) {
         count[i] += partialcount[i];
@@ -161,5 +171,23 @@ void* thread_function(void* arg) {
     pthread_mutex_unlock(&count_mutex); 
 
     return NULL;
+}
+
+// TRYING SIGNAL HANDLER (Not okay)
+void sigint_handler(int sig) {
+    char c;
+
+    printf("\nChild: Do you really want to terminate the program? (y/n): ");
+    fflush(stdout);
+
+    // Wait for the user to enter a character
+    scanf("%c", &c);
+
+    if (c == 'y' || c == 'Y') {
+        //Terminate the program
+	exit(0);
+    } else {
+        printf("Child: Continuing the counting...");
+    }
 }
 
