@@ -89,8 +89,8 @@ int main(int argc, char* argv[]) {
     } else {
     // This is the parent process (the writer process)
 
-        signal(SIGINT, SIG_IGN);	// for signal handler
-        signal(SIGTERM, SIG_IGN);	// for signal handler (both okay)
+        signal(SIGINT, SIG_IGN);	// for the parent process
+        signal(SIGTERM, SIG_IGN);	// to ignore the signal
 	
 	printf("Parent: Started.\n");
 	// Open the file for writing
@@ -173,7 +173,7 @@ void* thread_function(void* arg) {
     return NULL;
 }
 
-// TRYING SIGNAL HANDLER (Not okay)
+// Signal handler to terminate the child process
 void sigint_handler(int sig) {
     char c;
 
