@@ -37,10 +37,15 @@ int main(int argc, char* argv[]) {
     sem_t *sem_filelock;		// declaring the semaphore
     sem_filelock = sem_open(semName, O_CREAT, 0600, 0);		// We give 0 so that parent starts 
 								// always first, the writing part.
-
+    if (sem_filelock == SEM_FAILED) {
+        perror("sem_open failed");
+        exit(1);
+    }
+    
     pid_t child_pid = fork();		// process fork
 
     if (child_pid == -1) {
+        perror("Fork failed");
         exit(1);
     }
 
@@ -49,8 +54,11 @@ int main(int argc, char* argv[]) {
 
         signal(SIGINT, sigint_handler);		// for signal handler
         signal(SIGTERM, sigint_handler);	// for signal handler (both okay)
-	
-	sem_wait(sem_filelock);
+
+	if (sem_wait(sem_filelock) == -1) {
+            perror("sem_wait failed");
+            exit(1);
+        }
 	    
 	printf("Child: Started.\n");
 	
@@ -63,12 +71,20 @@ int main(int argc, char* argv[]) {
 	// Create the threads
 	for (int i = 0; i < NUM_THREADS; i++) {
 	    count_thread[i] = i;	
-	    pthread_create(&threads[i], NULL, thread_function, &count_thread[i]);
+	    int ret = pthread_create(&threads[i], NULL, thread_function, &count_thread[i]);
+	    if (ret != 0) {
+                perror("pthread_create failed");
+                exit(1);
+            }
 	}
 
 	// Wait for the threads to finish
 	for (int i = 0; i < NUM_THREADS; i++) {
-	    pthread_join(threads[i], NULL);
+	    int ret = pthread_join(threads[i], NULL);
+	    if (ret != 0) {
+                perror("pthread_join failed");
+                exit(1);
+            }
 	}
 
 	printf("Child: Prints counter for each character.\n");
@@ -96,12 +112,26 @@ int main(int argc, char* argv[]) {
 	// Open the file for writing
 	int fd = open("data.txt", O_CREAT | O_WRONLY, 00777);
 
+	if (fd == -1) {
+            perror("Opening file descriptor failed");
+            exit(1);
+        }
+
 	printf("Parent: Opened file.\n");
 
 	// Generate a string of random characters
 	char buf[NUM_CHARS + 1];
 	int urandom = open("/dev/urandom", O_RDONLY);
-	read(urandom, buf, NUM_CHARS);
+
+	if (urandom == -1) {
+            perror("Opening /dev/urandom failed");
+            exit(1);
+        }
+        
+	if (read(urandom, buf, NUM_CHARS) == -1) {
+            perror("Read from /dev/urandom failed");
+            exit(1);
+        }
 	close(urandom);
 	int counterletter = 0;
 	for (int i = 0; i < NUM_CHARS; i++) {
@@ -115,7 +145,10 @@ int main(int argc, char* argv[]) {
 	buf[NUM_CHARS] = '\0';
 
 	// Write the string to the file
-	write(fd, buf, NUM_CHARS);
+	if (write(fd, buf, NUM_CHARS) == -1) {
+            perror("Write to file failed");
+            exit(1);
+        }
 
 	printf("Parent: Letters writen in file, and counted: %d.\n", counterletter);
 	
@@ -124,7 +157,10 @@ int main(int argc, char* argv[]) {
 	// Close the file
 	close(fd);
 
-	sem_post(sem_filelock);
+	if (sem_post(sem_filelock) == -1) {
+            perror("sem_post failed");
+            exit(1);
+        }
 
 	printf("Parent: Waits for the child.\n");
 
@@ -132,8 +168,12 @@ int main(int argc, char* argv[]) {
 	waitpid(child_pid, NULL, 0);
 
 	printf("Parent: The child got a signal, and I terminated normally\n");
+
 	sem_close(sem_filelock);
-	sem_unlink(semName);
+	if (sem_unlink(semName) == -1) {
+            perror("sem_unlink failed");
+            exit(1);
+        }
     }  
     
     return 0;  
@@ -144,12 +184,23 @@ void* thread_function(void* arg) {
     // Open the file for reading
     int fd = open("data.txt", O_RDONLY, 00777);
 
+    if (fd == -1) {
+        perror("Open file failed in thread");
+        pthread_exit(NULL);
+    }
+
     // Seek to the correct position in the file
     lseek(fd, (long)arg * chunk_size, SEEK_CUR);
 
     // Read the chunk of data from the file
     char buf[chunk_size + 1];
+
     size_t num_read = read(fd, buf, chunk_size);
+    if (num_read == -1) {
+        perror("Read from file failed in thread");
+        close(fd);
+        pthread_exit(NULL);
+    }
     buf[num_read] = '\0';
 
     // Close the file
