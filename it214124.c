@@ -13,7 +13,7 @@
 #define NUM_THREADS 4		// Number of threads.
 #define NUM_CHARS 2000		// Number of characters for the file.
 
-int count_all_letters = 0;	// To store all the letter counted by child.
+int count_all_letters = 0;	// To store all the letters counted by child.
 
 int count_thread[NUM_THREADS];	// A table that stores each thread.
 
@@ -26,7 +26,7 @@ int chunk_size = NUM_CHARS / NUM_THREADS;
 // A table with size=26 to store the count of each character (A-Z)
 int count[26] = {0};
 
-void* thread_function(void* arg);	// thread fuction signature
+void* thread_function(void* arg);	// thread function signature
 
 void sigint_handler(int sig);		// signal handler signature
 
@@ -52,8 +52,9 @@ int main(int argc, char* argv[]) {
     if (child_pid == 0) {
     // This is the child process (the reader process)
 
-        signal(SIGINT, sigint_handler);		// for signal handler
-        signal(SIGTERM, sigint_handler);	// for signal handler (both okay)
+	// to handle interrupt-terminate signal to the child process    
+        signal(SIGINT, sigint_handler);
+        signal(SIGTERM, sigint_handler);
 
 	if (sem_wait(sem_filelock) == -1) {
             perror("sem_wait failed");
@@ -67,7 +68,7 @@ int main(int argc, char* argv[]) {
 	// Create an array of thread IDs
 	pthread_t threads[NUM_THREADS];
 
-	printf("Child: Creats 4 threads.\n");
+	printf("Child: Creates 4 threads.\n");
 	// Create the threads
 	for (int i = 0; i < NUM_THREADS; i++) {
 	    count_thread[i] = i;	
@@ -103,7 +104,7 @@ int main(int argc, char* argv[]) {
         printf("Child: Total number of letters in file: %d.\n", count_all_letters);
     
     } else {
-    // This is the parent process (the writer process)
+    // This is the parent process (the writter process)
 
         signal(SIGINT, SIG_IGN);	// for the parent process
         signal(SIGTERM, SIG_IGN);	// to ignore the signal
@@ -150,7 +151,7 @@ int main(int argc, char* argv[]) {
             exit(1);
         }
 
-	printf("Parent: Letters writen in file, and counted: %d.\n", counterletter);
+	printf("Parent: Letters written in file, and counted: %d.\n", counterletter);
 	
 	sleep(2);
 
@@ -167,8 +168,7 @@ int main(int argc, char* argv[]) {
 	// Wait for the child process to finish using waitpid()
 	waitpid(child_pid, NULL, 0);
 
-	printf("Parent: The child got a signal, and I terminated normally\n");
-
+	printf("Parent: I'm closing and unlinking the semaphore.\nNext, I'm terminating the program.\n");
 	sem_close(sem_filelock);
 	if (sem_unlink(semName) == -1) {
             perror("sem_unlink failed");
@@ -238,7 +238,7 @@ void sigint_handler(int sig) {
         //Terminate the program
 	exit(0);
     } else {
-        printf("Child: Continuing the counting...");
+        printf("Child: Continuing the counting...\n");
     }
 }
 
